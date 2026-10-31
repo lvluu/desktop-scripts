@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# vpn-up: connect Cisco Secure Client to a 2FA gateway. Already connected: the dropdown
+#   adds "Disconnect", and picking a gateway switches to it (disconnect, then connect).
+#   password: GNOME keyring, stored once by you:
+#       secret-tool store --label="VPN" service "$VPN_KEYRING_SERVICE" user "$(id -un)"
+#   2FA code: typed by you every time (terminal, or a desktop popup when run by an agent).
+#       Never stored, never passed through an agent; the popup is your per-connection approval.
+# Gateway: picked from a dropdown of the profile's hosts; VPN_HOST skips the pick.
+# Env (or ~/.config/desktop-scripts/env, kept out of git):
+#   VPN_HOST, VPN_USER (default your login name), VPN_KEYRING_SERVICE (default vpn),
+#   VPN_SORT: space-separated regexes; a host matching an earlier one sorts first,
+#             e.g. "IPSEC site-a" puts IPsec before SSL, then site-a before the rest.
+set -euo pipefail
+CONF=${XDG_CONFIG_HOME:-$HOME/.config}/desktop-scripts/env
+[ -f "$CONF" ] && . "$CONF"
+KEYRING_SERVICE=${VPN_KEYRING_SERVICE:-vpn}
+VPN=/opt/cisco/secureclient/bin/vpn
+HOST="${VPN_HOST:-}"
+USER_NAME="${VPN_USER:-$(id -un)}"
+
+connected() { ip link show cscotun0 2>/dev/null | grep -q 'UP'; }  # vpn state says Unknown while the GUI owns the session
+disconnect() {
+  pkill -x vpnui 2>/dev/null || true  # the CLI cannot drive the agent while the GUI holds it
+  "$VPN" -s disconnect >/dev/null 2>&1 || true
+  for _ in 1 2 3 4 5 6 7 8 9 10; do connected || break; sleep 0.5; done  # tunnel drops a moment later
+}
+# Host list from the Cisco profile, sorted by VPN_SORT (one 0/1 digit per regex, stable otherwise).
+mapfile -t HOSTS < <("$VPN" hosts 2>/dev/null | sed -n 's/^ *> //p' | awk -v keys="${VPN_SORT:-}" '
+  BEGIN { n = split(keys, re, " ") } { k = ""; for (i = 1; i <= n; i++) k = k ($0 ~ re[i] ? 0 : 1); print k "\t" $0 }' \
+  | sort -s -k1,1 | cut -f2-)
+[ ${#HOSTS[@]} -gt 0 ] || { echo "vpn-up: no hosts in the Cisco profile ($VPN hosts)" >&2; exit 2; }
+DISCONNECT="Disconnect"
+TEXT="Connect"
+if connected; then CHOICES=("$DISCONNECT" "${HOSTS[@]}"); TEXT="Connected. Disconnect, or pick a gateway to switch"
+else CHOICES=("${HOSTS[@]}"); fi
+
+if [ -t 0 ]; then
+  if [ -z "$HOST" ]; then
+    echo "vpn-up: $TEXT"
+    PS3="VPN gateway [1]: "
+    select HOST in "${CHOICES[@]}"; do break; done
+    HOST=${HOST:-${CHOICES[0]}}
+  fi
+  [ "$HOST" = "$DISCONNECT" ] || { read -rsp "VPN 2FA code: " OTP; echo; }
+elif [ -z "$HOST" ]; then
+  FORM=$(IFS='|'; zenity --forms --title "VPN" --text "$TEXT" --separator $'\n' --timeout 120 \
+    --add-combo "Gateway" --combo-values "${CHOICES[*]}" --add-password "2FA code" 2>/dev/null) \
+    || { echo "vpn-up: cancelled"; exit 0; }
+  { IFS= read -r HOST; IFS= read -r OTP; } <<<"$FORM" || true
+  HOST=${HOST:-${CHOICES[0]}}
+else
+  OTP=$(zenity --password --title "VPN: 2FA code" --timeout 120 2>/dev/null) || true
+fi
+if [ "$HOST" = "$DISCONNECT" ]; then
+  disconnect
+  (setsid /opt/cisco/secureclient/bin/vpnui >/dev/null 2>&1 &)
+  connected && { echo "vpn-up: still connected" >&2; exit 1; }
+  echo "vpn-up: disconnected"; exit 0
+fi
+[ -n "${OTP:-}" ] || { echo "vpn-up: no 2FA code entered" >&2; exit 3; }
+PASS=$(secret-tool lookup service "$KEYRING_SERVICE" user "$USER_NAME") || {
+  echo "vpn-up: no password in keyring; run once: secret-tool store --label=\"VPN\" service $KEYRING_SERVICE user $USER_NAME" >&2
+  exit 2; }
+
+disconnect  # also switches gateways when already connected
+printf '%s\n%s\n%s\ny\n' "$USER_NAME" "$PASS" "$OTP" | "$VPN" -s connect "$HOST" | grep -viE 'password|answer' || true
+unset PASS OTP
+(setsid /opt/cisco/secureclient/bin/vpnui >/dev/null 2>&1 &)
+connected && echo "vpn-up: connected to $HOST" || { echo "vpn-up: not connected, see output above" >&2; exit 1; }

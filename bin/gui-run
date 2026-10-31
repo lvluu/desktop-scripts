@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# gui-run TITLE ICON CMD...: run a script from a menu launcher (no terminal, so scripts use popups);
+# its last output line becomes a desktop notification.
+title=$1 icon=$2; shift 2
+out=$("$@" </dev/null 2>&1 | tail -1)
+notify-send -i "$icon" "$title" "${out:-$(basename "$1") finished}"

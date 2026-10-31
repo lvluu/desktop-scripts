@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# claude-update: update Claude Code (its own updater) and Claude Desktop (apt, through gui-sudo).
+# Prints one summary line last, so gui-run shows it as the notification.
+set -uo pipefail
+BIN="$(dirname "$(readlink -f "$0")")"
+summary=()
+
+if command -v claude >/dev/null; then
+  before=$(claude --version 2>/dev/null | cut -d' ' -f1)
+  claude update >/dev/null 2>&1
+  after=$(claude --version 2>/dev/null | cut -d' ' -f1)
+  [ "$before" = "$after" ] && summary+=("Code $after (latest)") || summary+=("Code $before -> $after")
+fi
+
+if dpkg-query -W claude-desktop >/dev/null 2>&1; then
+  before=$(dpkg-query -W -f='${Version}' claude-desktop)
+  list=$(grep -rl 'downloads.claude.ai' /etc/apt/sources.list.d/ 2>/dev/null | head -1)
+  # Refresh only the Claude source when found (fast); else the full index.
+  opts=(); [ -n "$list" ] && opts=(-o "Dir::Etc::sourcelist=$list" -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0)
+  if "$BIN/gui-sudo" sh -c 'apt-get -qq "$@" update && apt-get -qq -y install --only-upgrade claude-desktop' sh "${opts[@]}" >/dev/null 2>&1; then
+    after=$(dpkg-query -W -f='${Version}' claude-desktop)
+    [ "$before" = "$after" ] && summary+=("Desktop $after (latest)") || summary+=("Desktop $before -> $after, restart it to apply")
+  else
+    summary+=("Desktop: not updated (authentication cancelled or apt failed)")
+  fi
+fi
+
+(IFS=';'; echo "claude-update: ${summary[*]:-nothing installed}")

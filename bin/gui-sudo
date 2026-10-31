@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# gui-sudo CMD...: sudo that works from a menu launcher. PAM tries the fingerprint first (a popup says
+# touch the sensor); on failure or timeout sudo asks for the password in a zenity popup (sudo -A).
+# In a terminal it is plain sudo.
+set -euo pipefail
+[ -t 0 ] && exec sudo "$@"
+if ! sudo -n true 2>/dev/null; then  # no cached credentials: authenticate first, then run
+  zenity --info --no-wrap --title "Authentication" --timeout 15 \
+    --text "Touch the fingerprint sensor to allow:\n$*\n\nThe password popup follows if it fails." 2>/dev/null &
+  export GUI_SUDO_HINT=$!
+  SUDO_ASKPASS="$(dirname "$(readlink -f "$0")")/zenity-askpass" sudo -A -v || { kill $GUI_SUDO_HINT 2>/dev/null; exit 126; }
+  kill $GUI_SUDO_HINT 2>/dev/null || true
+fi
+exec sudo "$@"

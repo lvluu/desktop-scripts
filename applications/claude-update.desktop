@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Claude update
+Comment=Update Claude Code and Claude Desktop (fingerprint or password)
+Keywords=claude;update;upgrade;
+Icon=ds-claude-update
+Exec=@BIN@/gui-run "Claude update" ds-claude-update @BIN@/claude-update
+Terminal=false
+Categories=System;

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# tailscale-up: connect Tailscale; when already connected, offer to disconnect.
+# Root steps go through gui-sudo (fingerprint, then password popup). A login URL opens in the browser.
+# Env (or ~/.config/desktop-scripts/env): TS_UP_FLAGS, the non-default flags you use (e.g. --accept-routes).
+set -euo pipefail
+CONF=${XDG_CONFIG_HOME:-$HOME/.config}/desktop-scripts/env
+[ -f "$CONF" ] && . "$CONF"
+BIN="$(dirname "$(readlink -f "$0")")"
+read -ra FLAGS <<<"${TS_UP_FLAGS:-}"
+
+state() { tailscale status --json 2>/dev/null | sed -n 's/.*"BackendState": *"\([^"]*\)".*/\1/p' | head -1; }
+
+if [ "$(state)" = Running ]; then
+  if [ -t 0 ]; then read -rp "Tailscale is connected. Disconnect? [y/N] " a; [[ $a == [yY]* ]]
+  else zenity --question --title Tailscale --text "Tailscale is connected. Disconnect?" 2>/dev/null; fi \
+    || { echo "tailscale-up: still connected"; exit 0; }
+  "$BIN/gui-sudo" tailscale down
+  echo "tailscale-up: disconnected"; exit 0
+fi
+
+"$BIN/gui-sudo" tailscale up "${FLAGS[@]}" 2>&1 | while IFS= read -r line; do
+  echo "$line"
+  [[ $line =~ (https://login\.tailscale\.com/[^[:space:]]+) ]] && xdg-open "${BASH_REMATCH[1]}" >/dev/null 2>&1 &
+done
+[ "$(state)" = Running ] && echo "tailscale-up: connected" || { echo "tailscale-up: not connected ($(state))" >&2; exit 1; }

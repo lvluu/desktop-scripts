@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=VPN connect
+Comment=Connect, switch or disconnect the Cisco 2FA VPN (asks for the 2FA code)
+Keywords=vpn;cisco;connect;disconnect;
+Icon=ds-vpn
+Exec=@BIN@/gui-run VPN ds-vpn @BIN@/vpn-up
+Terminal=false
+Categories=Network;

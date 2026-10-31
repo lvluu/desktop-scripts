@@ -1,0 +1,4 @@
+#!/bin/sh
+# SUDO_ASKPASS helper: the password popup for gui-sudo (closes gui-sudo's fingerprint hint first).
+[ -n "${GUI_SUDO_HINT:-}" ] && kill "$GUI_SUDO_HINT" 2>/dev/null
+exec zenity --password --title "${1:-sudo password}" 2>/dev/null

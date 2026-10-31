@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Tailscale connect
+Comment=Connect Tailscale, or disconnect when connected (fingerprint or password)
+Keywords=tailscale;vpn;connect;disconnect;
+Icon=ds-tailscale
+Exec=@BIN@/gui-run Tailscale ds-tailscale @BIN@/tailscale-up
+Terminal=false
+Categories=Network;
