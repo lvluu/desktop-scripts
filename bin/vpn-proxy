@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# vpn-proxy: Cisco AnyConnect (SSL) VPN inside a podman container, exposed only as a SOCKS5 proxy
+#   on 127.0.0.1. The host network stays off the VPN; only what you point at the proxy goes through.
+#   Inside: openconnect --script-tun + ocproxy (userspace, no tun device, no extra capabilities).
+# Usage: vpn-proxy [up|down|status]   (default: up)
+#   password: GNOME keyring, same entry as vpn-up (VPN_KEYRING_SERVICE).
+#   2FA code: typed by you every time (terminal, or a desktop popup when run by an agent).
+# Env (or ~/.config/desktop-scripts/env, kept out of git):
+#   VPN_PROXY_URL   gateway URL with group, e.g. https://vpn.example.com/MyGroup (required)
+#   VPN_PROXY_PORT  host port of the SOCKS5 proxy (default 1080)
+#   VPN_PROXY_OTP_FIELD  form field of the 2FA code (default secondary_password)
+#   VPN_USER, VPN_KEYRING_SERVICE: as in vpn-up.
+# Clients must resolve names through the proxy: socks5h://127.0.0.1:1080, curl --socks5-hostname,
+#   ssh ProxyCommand "nc -X 5 -x 127.0.0.1:1080 %h %p".
+set -euo pipefail
+CONF=${XDG_CONFIG_HOME:-$HOME/.config}/desktop-scripts/env
+[ -f "$CONF" ] && . "$CONF"
+NAME=vpn-proxy
+IMAGE=localhost/vpn-proxy:1
+PORT=${VPN_PROXY_PORT:-1080}
+LOG=${XDG_STATE_HOME:-$HOME/.local/state}/vpn-proxy.log
+
+running() { [ "$(podman inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null)" = true ]; }
+
+case "${1:-up}" in
+  down) podman rm -f -t 5 "$NAME" >/dev/null 2>&1 || true; echo "vpn-proxy: stopped"; exit 0 ;;
+  status) running && echo "vpn-proxy: up, socks5h://127.0.0.1:$PORT" || { echo "vpn-proxy: down"; exit 1; }; exit 0 ;;
+  up) ;;
+  *) echo "usage: vpn-proxy [up|down|status]" >&2; exit 2 ;;
+esac
+running && { echo "vpn-proxy: already up, socks5h://127.0.0.1:$PORT"; exit 0; }
+: "${VPN_PROXY_URL:?set VPN_PROXY_URL (https://gateway/group) in $CONF}"
+USER_NAME="${VPN_USER:-$(id -un)}"
+KEYRING_SERVICE=${VPN_KEYRING_SERVICE:-vpn}
+
+podman image exists "$IMAGE" || podman build -q -t "$IMAGE" -f - <<'EOF' >/dev/null
+FROM docker.io/library/debian:12
+RUN apt-get update && apt-get install -y --no-install-recommends openconnect ocproxy ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+# stdin: password line, then 2FA code line. -g: listen on all container interfaces (published to host loopback only).
+ENTRYPOINT ["sh", "-c", "read -r P; read -r O; exec openconnect --protocol=anyconnect --user \"$1\" --passwd-on-stdin --form-entry \"main:$2=$O\" --script-tun --script 'ocproxy -D 1080 -g -k 30' \"$3\" <<EOF\n$P\nEOF", "vpn-proxy"]
+EOF
+
+if [ -t 0 ]; then read -rsp "VPN 2FA code: " OTP; echo
+else OTP=$(zenity --password --title "VPN proxy: 2FA code" --timeout 120 2>/dev/null) || true; fi
+[ -n "${OTP:-}" ] || { echo "vpn-proxy: no 2FA code entered" >&2; exit 3; }
+PASS=$(secret-tool lookup service "$KEYRING_SERVICE" user "$USER_NAME") || {
+  echo "vpn-proxy: no password in keyring; run once: secret-tool store --label=\"VPN\" service $KEYRING_SERVICE user $USER_NAME" >&2
+  exit 2; }
+
+mkdir -p "$(dirname "$LOG")"
+podman rm -f "$NAME" >/dev/null 2>&1 || true
+# -i without -d: credentials go in on stdin, never in args or env; setsid keeps it running after this shell.
+printf '%s\n%s\n' "$PASS" "$OTP" | setsid podman run --rm -i --name "$NAME" -p "127.0.0.1:$PORT:1080" \
+  "$IMAGE" "$USER_NAME" "${VPN_PROXY_OTP_FIELD:-secondary_password}" "$VPN_PROXY_URL" >"$LOG" 2>&1 &
+unset PASS OTP
+for i in $(seq 30); do
+  grep -q 'Established\|Connected as\|CSTP connected' "$LOG" 2>/dev/null && running && {
+    echo "vpn-proxy: up, socks5h://127.0.0.1:$PORT"; exit 0; }
+  running || [ "$i" -lt 5 ] || break
+  sleep 1
+done
+echo "vpn-proxy: not connected, see $LOG:" >&2; grep -viE 'password|secondary' "$LOG" | tail -5 >&2; exit 1
