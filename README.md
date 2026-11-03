@@ -6,7 +6,7 @@ uses zenity popups and reports its result as a desktop notification.
 | Script | Does |
 |---|---|
 | `vpn-up` | Cisco Secure Client 2FA VPN: pick a gateway from a dropdown, enter the code. When connected: disconnect, or switch gateway. |
-| `tailscale-cisco-fix` | Let tailnet TCP/DNS through Cisco Secure Client's firewall and clamp the tailscale0 MTU. `--install` adds a NetworkManager hook that reruns it on every VPN connect; `vpn-up` installs it on its first connect. |
+| `tailscale-cisco-fix` | Let tailnet TCP/DNS through Cisco Secure Client's firewall and clamp the tailscale0 MTU. `--install` adds a systemd timer that reruns it every 30 s (Cisco rewrites its rules at any time); `vpn-up` installs it on its first connect. |
 | `tailscale-up` | Connect Tailscale (opens the login URL if needed); when connected, offer to disconnect. |
 | `claude-update` | Update Claude Code (`claude update`) and Claude Desktop (apt). |
 | `gui-sudo` | `sudo` for launchers: fingerprint first (PAM `pam_fprintd`), then a zenity password popup (`sudo -A`). |
