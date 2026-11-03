@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Let tailnet traffic through Cisco Secure Client's lockdown firewall.
+# Cisco (vpnagentd) fills `ip filter` chain ciscovpn with a catch-all drop, plus explicit
+# drops of port 53 on tailscale0, so tailnet TCP/DNS die while the VPN is up (UDP/DERP keep
+# working, so `tailscale ping` still answers). Cisco rewrites its rules on every connect.
+# Needs root. `sudo tailscale-cisco-fix --install` once (vpn-up does it on its first connect):
+# copies this script to /usr/local/sbin and adds a NetworkManager dispatcher hook that reruns it
+# whenever cscotun0 or tailscale0 comes up, so no connect needs a manual rerun.
+set -euo pipefail
+
+if [[ ${1:-} == --install ]]; then
+  install -m 755 "$0" /usr/local/sbin/tailscale-cisco-fix
+  hook=/etc/NetworkManager/dispatcher.d/90-tailscale-cisco
+  cat >"$hook" <<'HOOK'
+#!/bin/sh
+# desktop-scripts tailscale-cisco-fix --install: Cisco writes its firewall rules a few seconds after
+# cscotun0 is up, and tailscaled resets the tailscale0 MTU on restart, so rerun the fix a few times.
+case "$1:$2" in cscotun0:up | tailscale0:up) ;; *) exit 0 ;; esac
+(for d in 3 10 30; do sleep "$d"; /usr/local/sbin/tailscale-cisco-fix; done 2>&1 | logger -t tailscale-cisco-fix) &
+HOOK
+  chmod 755 "$hook"
+  echo "installed: /usr/local/sbin/tailscale-cisco-fix and $hook"
+fi
+
+chain=ciscovpninitial
+nft list chain ip filter "$chain" >/dev/null 2>&1 || { echo "no Cisco firewall chain; nothing to do"; exit 0; }
+
+for dir in iifname oifname; do
+  if nft list chain ip filter "$chain" | grep -q "$dir \"tailscale0\" .*accept"; then
+    echo "$dir tailscale0: already allowed"
+  else
+    nft insert rule ip filter "$chain" "$dir" tailscale0 counter accept
+    echo "$dir tailscale0: allowed"
+  fi
+done
+
+# Cisco's tunnel MTU (cscotun0, ~1298) is too small for WireGuard packets of a 1280-byte
+# tailscale0: inner packets over ~1210 bytes vanish (TLS ClientHello hangs, small SYNs pass).
+# Clamp tailscale0 so the outer packet fits. tailscaled resets it on restart: rerun then.
+cisco_mtu=$(ip -o link show cscotun0 2>/dev/null | sed -n 's/.* mtu \([0-9]*\).*/\1/p')
+if [ -n "$cisco_mtu" ]; then
+  want=$((cisco_mtu - 100))
+  ip link set tailscale0 mtu "$want"
+  echo "tailscale0 mtu: $want (cscotun0 $cisco_mtu)"
+fi
