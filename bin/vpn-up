@@ -15,6 +15,8 @@ CONF=${XDG_CONFIG_HOME:-$HOME/.config}/desktop-scripts/env
 [ -f "$CONF" ] && . "$CONF"
 KEYRING_SERVICE=${VPN_KEYRING_SERVICE:-vpn}
 VPN=/opt/cisco/secureclient/bin/vpn
+BIN="$(dirname "$(readlink -f "$0")")"
+TS_HOOK=/etc/NetworkManager/dispatcher.d/90-tailscale-cisco
 HOST="${VPN_HOST:-}"
 USER_NAME="${VPN_USER:-$(id -un)}"
 
@@ -66,4 +68,8 @@ disconnect  # also switches gateways when already connected
 printf '%s\n%s\n%s\ny\n' "$USER_NAME" "$PASS" "$OTP" | "$VPN" -s connect "$HOST" | grep -viE 'password|answer' || true
 unset PASS OTP
 (setsid /opt/cisco/secureclient/bin/vpnui >/dev/null 2>&1 &)
+# Cisco's firewall drops tailnet TCP while connected; the hook reruns tailscale-cisco-fix on every connect.
+if connected && command -v tailscale >/dev/null && [ ! -e "$TS_HOOK" ]; then
+  "$BIN/gui-sudo" "$BIN/tailscale-cisco-fix" --install >/dev/null || echo "vpn-up: tailscale-cisco-fix --install failed" >&2
+fi
 connected && echo "vpn-up: connected to $HOST" || { echo "vpn-up: not connected, see output above" >&2; exit 1; }
