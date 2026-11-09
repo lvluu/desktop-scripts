@@ -1,0 +1,22 @@
+[Desktop Entry]
+Type=Application
+Name=VPN connect
+Comment=Cisco VPN in a container: only the VPN's routes go through it (asks for the 2FA code)
+Keywords=vpn;cisco;connect;disconnect;box;
+Icon=ds-vpn-box-on
+Exec=@BIN@/gui-run VPN ds-vpn-box-on @BIN@/vpn-box
+Terminal=false
+Categories=Network;
+Actions=connect;disconnect;tray;
+
+[Desktop Action connect]
+Name=Connect (default gateway)
+Exec=@BIN@/gui-run VPN ds-vpn-box-on @BIN@/vpn-box connect
+
+[Desktop Action disconnect]
+Name=Disconnect
+Exec=@BIN@/gui-run VPN ds-vpn-box-off @BIN@/vpn-box disconnect
+
+[Desktop Action tray]
+Name=Show tray icon
+Exec=@BIN@/vpn-box-tray

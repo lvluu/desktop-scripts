@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# vpn-box: Cisco Secure Client inside a container. Only VPN_BOX_ROUTES (and DNS for the VPN's
+#   domains) go through the tunnel; internet, LAN and Tailscale stay on the host, out of reach of
+#   Cisco's routes and firewall. Same dropdown + 2FA popup as vpn-up; it disconnects a native session.
+#   vpn-box                     menu: gateway + 2FA code; when connected also Disconnect
+#   vpn-box connect [GATEWAY]   connect (or switch) to GATEWAY, default VPN_HOST or the first
+#                               gateway in sort order; asks only the 2FA code
+#   vpn-box disconnect          disconnect and stop the box
+#   vpn-box status              print the gateway and exit 0 when connected, 1 when not
+#   vpn-box gateways            list the profile's gateways in sort order
+#   vpn-box build               (re)build the image from this host's /opt/cisco/secureclient install
+# Root work (podman, routes, DNS) runs in one `vpn-box --root` process started by pkexec (the
+# desktop's own polkit dialog: fingerprint or password; gui-sudo without polkit), so it asks once;
+# password and code reach it on stdin. First run builds the image
+# (about a minute): run `vpn-box --build` once first so the 2FA code does not expire meanwhile.
+# Env (or ~/.config/desktop-scripts/env): VPN_HOST, VPN_USER, VPN_KEYRING_SERVICE, VPN_SORT as in vpn-up
+#   (VPN_BOX_SORT overrides VPN_SORT here);
+#   VPN_BOX_ROUTES   space-separated host routes into the tunnel (default 10.0.0.0/8)
+#   VPN_BOX_DOMAINS  extra DNS domains for the VPN's DNS servers (its own search domains always count)
+#   VPN_BOX_SUBNET   host <-> box bridge, must not overlap the routes (default 192.168.250.0/29)
+set -euo pipefail
+HOME_DIR=$HOME
+RUN_UID=${PKEXEC_UID:-${SUDO_UID:-}}
+[ -n "$RUN_UID" ] && HOME_DIR=$(getent passwd "$RUN_UID" | cut -d: -f6)  # root side: user's config
+CONF=$HOME_DIR/.config/desktop-scripts/env
+[ -f "$CONF" ] && . "$CONF"
+BIN="$(dirname "$(readlink -f "$0")")"
+CISCO=/opt/cisco/secureclient
+VPN=$CISCO/bin/vpn
+NAME=vpn-box
+ROUTES=${VPN_BOX_ROUTES:-10.0.0.0/8}
+SUBNET=${VPN_BOX_SUBNET:-192.168.250.0/29}
+NET=${SUBNET%/*}
+GW=${NET%.*}.$((${NET##*.} + 1)) IP=${NET%.*}.$((${NET##*.} + 2))
+
+STATE=${XDG_RUNTIME_DIR:-/tmp}/vpn-box.gateway  # last gateway, for status and the tray
+as_root() { if command -v pkexec >/dev/null; then pkexec "$@"; else "$BIN/gui-sudo" "$@"; fi; }
+connected() { ip route show "${ROUTES%% *}" | grep -q "via $IP "; }  # routes die with the bridge
+
+# ---- root side ----
+box_vpn() { podman exec "$NAME" "$VPN" "$@"; }
+
+build() {
+  local ctx; ctx=$(mktemp -d)
+  tar czf "$ctx/cisco.tgz" --exclude=secureclient/temp --exclude=secureclient/dart \
+    --exclude=secureclient/CustomerExperienceFeedback -C / "${CISCO#/}" opt/.cisco
+  cp "$BIN/../vpn-box/Containerfile" "$BIN/../vpn-box/entry.sh" "$ctx/"
+  podman build -q --network host -t "$NAME" "$ctx" >/dev/null  # a native Cisco session drops bridge traffic
+  rm -rf "$ctx"
+  echo "vpn-box: image built"
+}
+
+start() {
+  podman image exists "$NAME" || build
+  podman network exists "$NAME" || podman network create --subnet "$SUBNET" --gateway "$GW" "$NAME" >/dev/null
+  podman container exists "$NAME" || podman run -d --rm --name "$NAME" --network "$NAME" --ip "$IP" \
+    --privileged --device /dev/net/tun --sysctl net.ipv4.ip_forward=1 "$NAME" >/dev/null
+  for _ in $(seq 20); do box_vpn state 2>/dev/null | grep -q 'state: Disconnected' && return; sleep 0.5; done
+  echo "vpn-box: agent in the container did not start" >&2; exit 1
+}
+
+stop() {
+  box_vpn -s disconnect >/dev/null 2>&1 || true
+  podman stop -t 3 "$NAME" >/dev/null 2>&1 || true  # --rm: bridge, routes and DNS go with it
+}
+
+search_domains() { podman exec "$NAME" awk '$1 == "search" || $1 == "domain" { for (i = 2; i <= NF; i++) print $i }' /etc/resolv.conf | sort -u; }
+
+# Send ROUTES and the VPN's DNS servers/domains (those Cisco added, given the ones before: $1) into the box.
+plumb() {
+  local br ns domains
+  br=$(podman network inspect "$NAME" --format '{{.NetworkInterface}}')
+  ns=$(podman exec "$NAME" awk '$1 == "nameserver" && $2 !~ /:/ { print $2 }' /etc/resolv.conf)
+  domains=$(comm -13 <(printf '%s\n' "$1") <(search_domains))
+  for r in $ROUTES; do ip route replace "$r" via "$IP"; done
+  for n in $ns; do ip route replace "$n/32" via "$IP"; done
+  # shellcheck disable=SC2086
+  resolvectl dns "$br" $ns
+  # shellcheck disable=SC2046,SC2086
+  resolvectl domain "$br" $(printf '~%s\n' $domains ${VPN_BOX_DOMAINS:-} | sort -u)
+}
+
+# stdin: user, password, 2FA code (never arguments: those show in ps).
+root_connect() {
+  local host=$1 user pass otp
+  IFS= read -r user; IFS= read -r pass; IFS= read -r otp
+  start
+  box_vpn -s disconnect >/dev/null 2>&1 || true  # switching gateways
+  local before; before=$(search_domains)
+  printf '%s\n%s\n%s\ny\n' "$user" "$pass" "$otp" | podman exec -i "$NAME" "$VPN" -s connect "$host" 2>&1 \
+    | grep -E 'error:' || true
+  podman exec "$NAME" ip link show cscotun0 >/dev/null 2>&1 || { echo "vpn-box: not connected to $host" >&2; exit 1; }
+  plumb "$before"
+  echo "vpn-box: connected to $host ($ROUTES via the box)"
+}
+
+case ${1:-} in
+  status) connected && { echo "connected: $(cat "$STATE" 2>/dev/null || echo unknown)"; exit 0; }; echo disconnected; exit 1 ;;
+  --root) [ "$(id -u)" = 0 ] || exit 126; root_connect "$2"; exit ;;
+  --root-stop) [ "$(id -u)" = 0 ] || exit 126; stop; exit ;;
+  --root-build) [ "$(id -u)" = 0 ] || exit 126; build; exit ;;
+  build) as_root "$(readlink -f "$0")" --root-build; exit ;;
+  ''|connect|disconnect|gateways) ;;
+  *) sed -n '5,10s/^#  //p' "$0" >&2; exit 2 ;;
+esac
+
+# ---- user side ----
+HOST="${VPN_HOST:-}"
+USER_NAME="${VPN_USER:-$(id -un)}"
+KEYRING_SERVICE=${VPN_KEYRING_SERVICE:-vpn}
+mapfile -t HOSTS < <("$VPN" hosts 2>/dev/null | sed -n 's/^ *> //p' | awk -v keys="${VPN_BOX_SORT:-${VPN_SORT:-}}" '
+  BEGIN { n = split(keys, re, " ") } { k = ""; for (i = 1; i <= n; i++) k = k ($0 ~ re[i] ? 0 : 1); print k "\t" $0 }' \
+  | sort -s -k1,1 | cut -f2-)
+[ ${#HOSTS[@]} -gt 0 ] || { echo "vpn-box: no hosts in the Cisco profile ($VPN hosts)" >&2; exit 2; }
+[ "${1:-}" = gateways ] && { printf '%s\n' "${HOSTS[@]}"; exit 0; }
+DISCONNECT="Disconnect"
+TEXT="Connect (VPN box: only $ROUTES)"
+if connected; then CHOICES=("$DISCONNECT" "${HOSTS[@]}"); TEXT="Connected. Disconnect, or pick a gateway to switch"
+else CHOICES=("${HOSTS[@]}"); fi
+case ${1:-} in
+  connect) HOST=${2:-${HOST:-${HOSTS[0]}}} ;;
+  disconnect) HOST=$DISCONNECT ;;
+esac
+
+if [ -t 0 ]; then
+  if [ -z "$HOST" ]; then
+    echo "vpn-box: $TEXT"
+    PS3="VPN gateway [1]: "
+    select HOST in "${CHOICES[@]}"; do break; done
+    HOST=${HOST:-${CHOICES[0]}}
+  fi
+  [ "$HOST" = "$DISCONNECT" ] || { read -rsp "VPN 2FA code: " OTP; echo; }
+elif [ -z "$HOST" ]; then
+  FORM=$(IFS='|'; zenity --forms --title "VPN box" --text "$TEXT" --separator $'\n' --timeout 120 \
+    --add-combo "Gateway" --combo-values "${CHOICES[*]}" --add-password "2FA code" 2>/dev/null) \
+    || { echo "vpn-box: cancelled"; exit 0; }
+  { IFS= read -r HOST; IFS= read -r OTP; } <<<"$FORM" || true
+  HOST=${HOST:-${CHOICES[0]}}
+else
+  OTP=$(zenity --password --title "VPN box: 2FA code" --timeout 120 2>/dev/null) || true
+fi
+if [ "$HOST" = "$DISCONNECT" ]; then
+  as_root "$(readlink -f "$0")" --root-stop
+  rm -f "$STATE"
+  connected && { echo "vpn-box: still connected" >&2; exit 1; }
+  echo "vpn-box: disconnected"; exit 0
+fi
+[ -n "${OTP:-}" ] || { echo "vpn-box: no 2FA code entered" >&2; exit 3; }
+PASS=$(secret-tool lookup service "$KEYRING_SERVICE" user "$USER_NAME") || {
+  echo "vpn-box: no password in keyring; run once: secret-tool store --label=\"VPN\" service $KEYRING_SERVICE user $USER_NAME" >&2
+  exit 2; }
+if ip link show cscotun0 >/dev/null 2>&1; then  # a native session would take the same routes
+  pkill -x vpnui 2>/dev/null || true
+  "$VPN" -s disconnect >/dev/null 2>&1 || true
+fi
+printf '%s\n%s\n%s\n' "$USER_NAME" "$PASS" "$OTP" | as_root "$(readlink -f "$0")" --root "$HOST"
+printf '%s\n' "$HOST" >"$STATE"
