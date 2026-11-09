@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""vpn-box-tray: top-bar icon for vpn-box. Green = connected, grey = not, amber = working.
+
+Menu: Connect (default gateway), Connect to > (every gateway), Disconnect. Each action runs
+`vpn-box` through gui-run, so the usual popups (2FA code, fingerprint) and a notification follow.
+Needs gir1.2-ayatanaappindicator3-0.1 and, on GNOME, the AppIndicator extension.
+"""
+import os
+import subprocess
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("AyatanaAppIndicator3", "0.1")
+from gi.repository import AyatanaAppIndicator3 as AppIndicator  # noqa: E402
+from gi.repository import GLib, Gtk  # noqa: E402
+
+BIN = os.path.dirname(os.path.realpath(__file__))
+VPN_BOX = os.path.join(BIN, "vpn-box")
+GUI_RUN = os.path.join(BIN, "gui-run")
+POLL_SECONDS = 3
+
+
+def vpn_box(*args):
+    return subprocess.run([VPN_BOX, *args], capture_output=True, text=True)
+
+
+class Tray:
+    def __init__(self):
+        self.job = None
+        self.ind = AppIndicator.Indicator.new(
+            "vpn-box", "ds-vpn-box-off", AppIndicator.IndicatorCategory.SYSTEM_SERVICES
+        )
+        self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+        self.ind.set_title("VPN box")
+        self.status = Gtk.MenuItem(label="…", sensitive=False)
+        self.connect = Gtk.MenuItem(label="Connect")
+        self.connect.connect("activate", lambda _: self.run("connect"))
+        self.gateways = Gtk.MenuItem(label="Connect to")
+        sub = Gtk.Menu()
+        for gw in vpn_box("gateways").stdout.splitlines():
+            item = Gtk.MenuItem(label=gw)
+            item.connect("activate", lambda _, g=gw: self.run("connect", g))
+            sub.append(item)
+        self.gateways.set_submenu(sub)
+        self.disconnect = Gtk.MenuItem(label="Disconnect")
+        self.disconnect.connect("activate", lambda _: self.run("disconnect"))
+        menu = Gtk.Menu()
+        for item in (self.status, Gtk.SeparatorMenuItem(), self.connect, self.gateways, self.disconnect):
+            menu.append(item)
+        menu.show_all()
+        self.ind.set_menu(menu)
+        self.refresh()
+        GLib.timeout_add_seconds(POLL_SECONDS, self.refresh)
+
+    def run(self, *args):
+        if self.job and self.job.poll() is None:
+            return
+        self.job = subprocess.Popen([GUI_RUN, "VPN box", "ds-vpn-box-on", VPN_BOX, *args])
+        self.refresh()
+
+    def refresh(self):
+        busy = self.job is not None and self.job.poll() is None
+        up = vpn_box("status")
+        connected = up.returncode == 0
+        icon = "busy" if busy else "on" if connected else "off"
+        self.ind.set_icon_full(f"ds-vpn-box-{icon}", up.stdout.strip())
+        self.status.set_label("Working…" if busy else up.stdout.strip().capitalize() or "Disconnected")
+        for item in (self.connect, self.gateways, self.disconnect):
+            item.set_sensitive(not busy)
+        self.disconnect.set_visible(connected)
+        self.connect.set_label("Reconnect" if connected else "Connect")
+        return True
+
+
+if __name__ == "__main__":
+    Tray()
+    Gtk.main()

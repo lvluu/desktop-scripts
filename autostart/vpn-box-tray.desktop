@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=VPN box tray
+Comment=Top-bar icon for vpn-box: state, connect, disconnect
+Icon=ds-vpn-box-on
+Exec=@BIN@/vpn-box-tray
+Terminal=false
+X-GNOME-Autostart-enabled=true

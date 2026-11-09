@@ -1,0 +1,10 @@
+# Cisco Secure Client (>= 5.1.10, CLI only) in a container; see bin/vpn-box.
+# Build context: entry.sh + cisco.tgz, which `vpn-box --build` tars from the host's /opt install
+# (licensed binaries, never committed).
+FROM docker.io/library/ubuntu:26.04
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      iproute2 iptables nftables kmod libglib2.0-0t64 libxml2-16 ca-certificates procps \
+    && rm -rf /var/lib/apt/lists/*
+ADD cisco.tgz /
+COPY entry.sh /entry.sh
+ENTRYPOINT ["/entry.sh"]
