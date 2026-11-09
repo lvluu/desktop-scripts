@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""gui-dialog: the popups of these scripts, shown under the calling script's own name and icon.
+
+zenity's windows carry zenity's app id, so GNOME's dock, window list and alt-tab showed zenity's
+icon. Here the app id is $DS_APP (the launcher's desktop id, set by gui-run), matched by GNOME to
+<DS_APP>.desktop; the dialog also shows $DS_ICON next to its text.
+
+  gui-dialog [--title T] [--timeout S] --text T [--combo LABEL A|B|C] [--password LABEL]
+      form: prints each field's value, one per line, in the order given
+  gui-dialog [--title T] --password LABEL      a single hidden entry (also the sudo askpass)
+  gui-dialog [--title T] --question --text T   exit 0 = yes
+  gui-dialog [--title T] --info --text T       OK button only
+Exit 1 when cancelled or timed out.
+"""
+import argparse
+import os
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import GLib, Gtk  # noqa: E402
+
+
+def parse(argv):
+    p = argparse.ArgumentParser(prog="gui-dialog")
+    p.add_argument("--title", default=os.environ.get("DS_TITLE", ""))
+    p.add_argument("--text", default="")
+    p.add_argument("--timeout", type=int, default=0)
+    p.add_argument("--question", action="store_true")
+    p.add_argument("--info", action="store_true")
+    p.add_argument("--combo", nargs=2, action="append", default=[], metavar=("LABEL", "VALUES"))
+    p.add_argument("--password", action="append", default=[], metavar="LABEL")
+    return p.parse_args(argv)
+
+
+def build(args, icon):
+    dialog = Gtk.Dialog(title=args.title)
+    if args.info:
+        dialog.add_buttons("OK", Gtk.ResponseType.OK)
+    elif args.question:
+        dialog.add_buttons("No", Gtk.ResponseType.CANCEL, "Yes", Gtk.ResponseType.OK)
+    else:
+        dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "OK", Gtk.ResponseType.OK)
+    dialog.set_default_response(Gtk.ResponseType.OK)
+    dialog.set_keep_above(True)
+    grid = Gtk.Grid(column_spacing=12, row_spacing=10, margin=16)
+    rows = len(args.combo) + len(args.password) + 1
+    grid.attach(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.DIALOG), 0, 0, 1, rows)
+    if args.text:
+        grid.attach(Gtk.Label(label=args.text, xalign=0, wrap=True, max_width_chars=48), 1, 0, 2, 1)
+    fields, row = [], 1
+    for label, values in args.combo:
+        combo = Gtk.ComboBoxText()
+        for value in values.split("|"):
+            combo.append_text(value)
+        combo.set_active(0)
+        grid.attach(Gtk.Label(label=label, xalign=0), 1, row, 1, 1)
+        grid.attach(combo, 2, row, 1, 1)
+        fields.append(combo.get_active_text)
+        row += 1
+    for label in args.password:
+        entry = Gtk.Entry(visibility=False, activates_default=True)
+        grid.attach(Gtk.Label(label=label, xalign=0), 1, row, 1, 1)
+        grid.attach(entry, 2, row, 1, 1)
+        fields.append(entry.get_text)
+        row += 1
+    dialog.get_content_area().add(grid)
+    return dialog, fields
+
+
+def main(argv):
+    args = parse(argv)
+    GLib.set_prgname(os.environ.get("DS_APP", "desktop-scripts"))  # Wayland app id
+    icon = os.environ.get("DS_ICON", "dialog-password" if args.password else "dialog-information")
+    Gtk.Window.set_default_icon_name(icon)
+    dialog, fields = build(args, icon)
+    dialog.show_all()
+    if args.timeout:
+        GLib.timeout_add_seconds(args.timeout, lambda: dialog.response(Gtk.ResponseType.CANCEL))
+    if dialog.run() != Gtk.ResponseType.OK:
+        return 1
+    for get in fields:
+        print(get() or "")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

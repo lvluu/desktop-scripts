@@ -12,7 +12,7 @@ state() { tailscale status --json 2>/dev/null | sed -n 's/.*"BackendState": *"\(
 
 if [ "$(state)" = Running ]; then
   if [ -t 0 ]; then read -rp "Tailscale is connected. Disconnect? [y/N] " a; [[ $a == [yY]* ]]
-  else zenity --question --title Tailscale --text "Tailscale is connected. Disconnect?" 2>/dev/null; fi \
+  else "$BIN/gui-dialog" --question --text "Tailscale is connected. Disconnect?" 2>/dev/null; fi \
     || { echo "tailscale-up: still connected"; exit 0; }
   "$BIN/gui-sudo" tailscale down
   echo "tailscale-up: disconnected"; exit 0

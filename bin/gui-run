@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # gui-run TITLE ICON CMD...: run a script from a menu launcher (no terminal, so scripts use popups);
-# its last output line becomes a desktop notification.
+# its last output line becomes a desktop notification. DS_APP (the script's name = its launcher's
+# desktop id), DS_TITLE and DS_ICON let gui-dialog popups and the notification show that launcher.
 title=$1 icon=$2; shift 2
+export DS_APP=${DS_APP:-$(basename "$1")} DS_TITLE=$title DS_ICON=$icon
 out=$("$@" </dev/null 2>&1 | tail -1)
-notify-send -i "$icon" "$title" "${out:-$(basename "$1") finished}"
+notify-send -a "$title" -i "$icon" -h "string:desktop-entry:$DS_APP" "$title" "${out:-$(basename "$1") finished}"

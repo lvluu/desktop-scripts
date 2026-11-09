@@ -1,7 +1,7 @@
 # desktop-scripts
 
 Small Linux desktop helpers. Each one runs in a terminal or from the app menu; from the menu it
-uses zenity popups and reports its result as a desktop notification.
+uses `gui-dialog` popups (under its own launcher name and icon) and reports its result as a desktop notification.
 
 | Script | Does |
 |---|---|
@@ -11,7 +11,8 @@ uses zenity popups and reports its result as a desktop notification.
 | `tailscale-cisco-fix` | Let tailnet TCP/DNS through Cisco Secure Client's firewall and clamp the tailscale0 MTU. `--install` adds a systemd timer that reruns it every 30 s (Cisco rewrites its rules at any time); `vpn-up` installs it on its first connect. |
 | `tailscale-up` | Connect Tailscale (opens the login URL if needed); when connected, offer to disconnect. |
 | `claude-update` | Update Claude Code (`claude update`) and Claude Desktop (apt). |
-| `gui-sudo` | `sudo` for launchers: fingerprint first (PAM `pam_fprintd`), then a zenity password popup (`sudo -A`). |
+| `gui-sudo` | `sudo` for launchers: fingerprint first (PAM `pam_fprintd`), then a password popup (`sudo -A`, `gui-askpass`). |
+| `gui-dialog` | The popups (form, password, question, info), a small GTK dialog: unlike zenity's, its window and the `gui-run` notification carry the launcher's app id, so the dock, alt-tab and notifications show the script's own name and icon. |
 | `gui-run` | Menu-launcher wrapper: runs a script without a terminal, notifies its last output line. |
 
 ## Install
@@ -20,7 +21,7 @@ uses zenity popups and reports its result as a desktop notification.
 ./install.sh
 ```
 
-Needs `zenity`, `notify-send`, and for `vpn-up`/`vpn-box` `secret-tool`. `vpn-box` also needs
+Needs Python 3 with GTK 3 (`python3-gi`), `notify-send`, and for `vpn-up`/`vpn-box` `secret-tool`. `vpn-box` also needs
 `podman` and an installed Cisco Secure Client 5.1.10+ (its image is built from `/opt/cisco/secureclient`,
 never committed): run `vpn-box build` once before the first connect. `vpn-box-tray` needs
 `gir1.2-ayatanaappindicator3-0.1` and, on GNOME, the AppIndicator extension. Fingerprint in `gui-sudo` works when

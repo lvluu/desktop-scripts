@@ -45,13 +45,13 @@ if [ -t 0 ]; then
   fi
   [ "$HOST" = "$DISCONNECT" ] || { read -rsp "VPN 2FA code: " OTP; echo; }
 elif [ -z "$HOST" ]; then
-  FORM=$(IFS='|'; zenity --forms --title "VPN" --text "$TEXT" --separator $'\n' --timeout 120 \
-    --add-combo "Gateway" --combo-values "${CHOICES[*]}" --add-password "2FA code" 2>/dev/null) \
+  FORM=$(IFS='|'; "$BIN/gui-dialog" --timeout 120 --text "$TEXT" \
+    --combo "Gateway" "${CHOICES[*]}" --password "2FA code" 2>/dev/null) \
     || { echo "vpn-up: cancelled"; exit 0; }
   { IFS= read -r HOST; IFS= read -r OTP; } <<<"$FORM" || true
   HOST=${HOST:-${CHOICES[0]}}
 else
-  OTP=$(zenity --password --title "VPN: 2FA code" --timeout 120 2>/dev/null) || true
+  OTP=$("$BIN/gui-dialog" --timeout 120 --text "$HOST" --password "2FA code" 2>/dev/null) || true
 fi
 if [ "$HOST" = "$DISCONNECT" ]; then
   disconnect
