@@ -5,6 +5,7 @@ SRC="$(cd "$(dirname "$0")" && pwd)"
 BIN="$HOME/.local/bin" APPS="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 mkdir -p "$BIN" "$APPS"
 for f in "$SRC"/bin/*; do ln -sfn "$f" "$BIN/$(basename "$f")"; done
+find "$BIN" -maxdepth 1 -xtype l -lname "$SRC/bin/*" -delete  # scripts since removed or renamed
 ICONS="${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps"
 mkdir -p "$ICONS"
 for f in "$SRC"/icons/*.svg; do ln -sfn "$f" "$ICONS/$(basename "$f")"; done
