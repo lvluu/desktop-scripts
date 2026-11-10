@@ -15,7 +15,8 @@
 # (about a minute): run `vpn-box --build` once first so the 2FA code does not expire meanwhile.
 # Env (or ~/.config/desktop-scripts/env): VPN_HOST, VPN_USER, VPN_KEYRING_SERVICE, VPN_SORT as in vpn-up
 #   (VPN_BOX_SORT overrides VPN_SORT here);
-#   VPN_BOX_ROUTES   space-separated host routes into the tunnel (default 10.0.0.0/8)
+#   VPN_BOX_ROUTES   space-separated host routes into the tunnel (default 10.0.0.0/8 172.16.0.0/12:
+#                    private ranges a VPN's internal names resolve to; 192.168/16 stays with home LANs)
 #   VPN_BOX_DOMAINS  extra DNS domains for the VPN's DNS servers (its own search domains always count)
 #   VPN_BOX_SUBNET   host <-> box bridge, must not overlap the routes (default 192.168.250.0/29)
 set -euo pipefail
@@ -28,13 +29,19 @@ BIN="$(dirname "$(readlink -f "$0")")"
 CISCO=/opt/cisco/secureclient
 VPN=$CISCO/bin/vpn
 NAME=vpn-box
-ROUTES=${VPN_BOX_ROUTES:-10.0.0.0/8}
+ROUTES=${VPN_BOX_ROUTES:-10.0.0.0/8 172.16.0.0/12}
 SUBNET=${VPN_BOX_SUBNET:-192.168.250.0/29}
 NET=${SUBNET%/*}
 GW=${NET%.*}.$((${NET##*.} + 1)) IP=${NET%.*}.$((${NET##*.} + 2))
 
 STATE=${XDG_RUNTIME_DIR:-/tmp}/vpn-box.gateway  # last gateway, for status and the tray
-as_root() { if command -v pkexec >/dev/null; then pkexec "$@"; else "$BIN/gui-sudo" "$@"; fi; }
+as_root() {
+  if grep -q '^NoNewPrivs:[[:space:]]*1' /proc/self/status; then  # setuid pkexec/sudo cannot work
+    echo "vpn-box: started from a sandbox (no_new_privs), cannot get root; use the app menu or a normal terminal" >&2
+    exit 126
+  fi
+  if command -v pkexec >/dev/null; then pkexec "$@"; else "$BIN/gui-sudo" "$@"; fi
+}
 connected() { ip route show "${ROUTES%% *}" | grep -q "via $IP "; }  # routes die with the bridge
 
 # ---- root side ----
