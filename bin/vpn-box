@@ -143,7 +143,7 @@ elif [ -z "$HOST" ]; then
     || { echo "vpn-box: cancelled"; exit 0; }
   { IFS= read -r HOST; IFS= read -r OTP; } <<<"$FORM" || true
   HOST=${HOST:-${CHOICES[0]}}
-else
+elif [ "$HOST" != "$DISCONNECT" ]; then
   OTP=$("$BIN/gui-dialog" --timeout 120 --text "$HOST" --password "2FA code" 2>/dev/null) || true
 fi
 if [ "$HOST" = "$DISCONNECT" ]; then

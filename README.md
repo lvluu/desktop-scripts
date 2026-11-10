@@ -55,6 +55,10 @@ driver encountered an error" (the entrypoint unmounts them); a lockdown profile 
 `ciscovpninitial` chain with drops (the entrypoint lets the bridge interface through).
 
 
+## Checks
+
+`test/vpn-box.sh`: `vpn-box disconnect` from the tray or app menu asks no 2FA code.
+
 ## License
 
 MIT. Not affiliated with Anthropic, Tailscale or Cisco; names are used only to say what each script drives.
