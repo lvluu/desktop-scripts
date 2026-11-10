@@ -5,7 +5,7 @@ uses `gui-dialog` popups (under its own launcher name and icon) and reports its 
 
 | Script | Does |
 |---|---|
-| `vpn-box` | Cisco Secure Client in a container: only `VPN_BOX_ROUTES` (default `10.0.0.0/8`) and DNS for the VPN's domains go through the tunnel; internet, LAN and Tailscale stay on the host, untouched by Cisco's routes and firewall. `vpn-box` (menu), `connect [GATEWAY]`, `disconnect`, `status`, `gateways`, `build`. Disconnects a native session first. Launcher "VPN connect". |
+| `vpn-box` | Cisco Secure Client in a container: only `VPN_BOX_ROUTES` (default `10.0.0.0/8 172.16.0.0/12`) and DNS for the VPN's domains go through the tunnel; internet, LAN and Tailscale stay on the host, untouched by Cisco's routes and firewall. `vpn-box` (menu), `connect [GATEWAY]`, `disconnect`, `status`, `gateways`, `build`. Disconnects a native session first. Launcher "VPN connect". |
 | `vpn-box-tray` | Top-bar icon for `vpn-box`: green connected, grey not, amber working; menu Connect, Connect to (each gateway), Disconnect. Starts at login. |
 | `vpn-up` | Native Cisco Secure Client 2FA VPN for all traffic (launcher "VPN connect (full tunnel)"): pick a gateway from a dropdown, enter the code. When connected: disconnect, or switch gateway. |
 | `tailscale-cisco-fix` | Let tailnet TCP/DNS through Cisco Secure Client's firewall and clamp the tailscale0 MTU. `--install` adds a systemd timer that reruns it every 30 s (Cisco rewrites its rules at any time); `vpn-up` installs it on its first connect. |
@@ -36,7 +36,8 @@ VPN_KEYRING_SERVICE=my-vpn          # secret-tool service holding the VPN passwo
 VPN_SORT="IPSEC site-a"             # dropdown order: earlier regex match sorts first
 TS_UP_FLAGS="--accept-routes"       # your non-default `tailscale up` flags
 VPN_BOX_SORT="site-a SSL"           # vpn-box dropdown order (default VPN_SORT); first = `connect` default
-VPN_BOX_ROUTES="10.0.0.0/8"         # host routes sent into the box
+VPN_BOX_ROUTES="10.0.0.0/8 172.16.0.0/12"  # host routes sent into the box (an internal name
+                                    # resolving outside them goes out the normal link)
 VPN_BOX_DOMAINS="corp.example"      # extra DNS domains for the VPN's DNS servers
 ```
 
