@@ -6,7 +6,9 @@
 #   vpn-box connect [GATEWAY]   connect (or switch) to GATEWAY, default VPN_HOST or the first
 #                               gateway in sort order; asks only the 2FA code
 #   vpn-box disconnect          disconnect and stop the box
-#   vpn-box status              print the gateway and exit 0 when connected and the VPN DNS answers, 1 when not
+#   vpn-box status              print the gateway and exit 0 when connected and the VPN DNS answers ping
+#                               (1 s, the tray polls it), 1 when not
+#   vpn-box health              each check with its result: routes, tunnel DNS ping, VPN name lookup
 # Every run logs its steps (timestamps, full Cisco output, routes, DNS, a final health check) to
 #   ~/.local/state/vpn-box.log; `tail -f` it while connecting from the tray.
 #   vpn-box gateways            list the profile's gateways in sort order
@@ -53,8 +55,8 @@ healthy() {
   local ns dom
   ns=$(vpn_dns | head -1); dom=$(resolvectl domain "$(link)" 2>/dev/null | grep -o '~[^ ]*' | head -1 | tr -d '~')
   [ -n "$ns" ] || { log "health: no VPN DNS server on the bridge"; return 1; }
-  ping -c1 -W3 "$ns" >/dev/null 2>&1 || { log "health: VPN DNS $ns does not answer ping: tunnel dead, reconnect"; return 1; }
-  [ -z "$dom" ] || resolvectl query "$dom" >/dev/null 2>&1 || timeout 5 getent hosts "$dom" >/dev/null || {
+  ping -c1 -W"${PING_WAIT:-3}" "$ns" >/dev/null 2>&1 || { log "health: VPN DNS $ns does not answer ping: tunnel dead, reconnect"; return 1; }
+  [ -n "${QUICK:-}" ] || [ -z "$dom" ] || resolvectl query "$dom" >/dev/null 2>&1 || timeout 5 getent hosts "$dom" >/dev/null || {
     log "health: $dom does not resolve via $ns"; return 1; }
   log "health: ok (DNS $ns answers${dom:+, $dom resolves})"
 }
@@ -123,8 +125,11 @@ root_connect() {
 
 case ${1:-} in
   status) connected || { echo disconnected; exit 1; }
-    healthy 2>/dev/null || { echo "dead: routes up but the VPN DNS does not answer; reconnect"; exit 1; }
+    QUICK=1 PING_WAIT=1 healthy 2>/dev/null || { echo "dead: routes up but the VPN DNS does not answer; reconnect"; exit 1; }
     echo "connected: $(cat "$STATE" 2>/dev/null || echo unknown)"; exit 0 ;;
+  health) connected && log "health: routes $(ip route | grep -c "via $IP ") via $IP on $(link)" \
+      || { log "health: no routes via $IP: not connected"; exit 1; }
+    healthy; exit ;;
   --root) [ "$(id -u)" = 0 ] || exit 126; root_connect "$2"; exit ;;
   --root-stop) [ "$(id -u)" = 0 ] || exit 126; stop; exit ;;
   --root-build) [ "$(id -u)" = 0 ] || exit 126; build; exit ;;
