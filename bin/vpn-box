@@ -85,7 +85,7 @@ start() {
 
 stop() {
   box_vpn -s disconnect >/dev/null 2>&1 || true
-  podman stop -t 3 "$NAME" >/dev/null 2>&1 || true  # --rm: bridge, routes and DNS go with it
+  podman rm -f -t 3 "$NAME" >/dev/null 2>&1 || true  # gone before return (stop + --rm removes later): routes, DNS go with it
 }
 
 search_domains() { podman exec "$NAME" awk '$1 == "search" || $1 == "domain" { for (i = 2; i <= NF; i++) print $i }' /etc/resolv.conf | sort -u; }
@@ -108,13 +108,17 @@ plumb() {
 root_connect() {
   local host=$1 user pass otp
   IFS= read -r user; IFS= read -r pass; IFS= read -r otp
-  log "root: starting the box"
+  # A fresh box per connect: a session that died uncleanly (wifi roam, sleep) leaves the box's resolv.conf on the
+  # dead VPN DNS, so the next connect cannot even resolve the gateway ("Failed contacting <gw>. Trying backup").
+  log "root: starting a fresh box"
+  stop
   start
-  box_vpn -s disconnect >/dev/null 2>&1 || true  # switching gateways
   local before; before=$(search_domains)
   log "root: connecting to $host as $user (Cisco output follows)"
   printf '%s\n%s\n%s\ny\n' "$user" "$pass" "$otp" | podman exec -i "$NAME" "$VPN" -s connect "$host" 2>&1 \
     | grep -vE '^\s*$|^(Username|Password|Second Password|Answer)' | sed 's/^/  cisco: /' >&2 || true
+  [ "$(box_vpn state 2>/dev/null | grep -c 'state: Connected')" -gt 0 ] || \
+    log "root: hint: 'Failed contacting <gateway>' = the box cannot resolve it; 'cannot verify server' = backup IP rejected"
   podman exec "$NAME" ip link show cscotun0 >/dev/null 2>&1 || {
     log "root: no cscotun0 in the box: not connected to $host (see cisco lines above)"; exit 1; }
   log "root: tunnel up; routes, DNS"
