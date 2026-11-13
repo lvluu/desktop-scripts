@@ -85,7 +85,10 @@ start() {
 
 stop() {
   box_vpn -s disconnect >/dev/null 2>&1 || true
-  podman rm -f -t 3 "$NAME" >/dev/null 2>&1 || true  # gone before return (stop + --rm removes later): routes, DNS go with it
+  podman rm -f -t 3 "$NAME" >/dev/null 2>&1 || true  # gone before return (stop + --rm removes later)
+  # Prune the host side too, so a reconnect rebuilds everything: the bridge network takes its routes and DNS along.
+  ip route show | awk -v ip="$IP" '$2 == "via" && $3 == ip { print $1 }' | while read -r r; do ip route del "$r" 2>/dev/null || true; done
+  podman network rm -f "$NAME" >/dev/null 2>&1 || true
 }
 
 search_domains() { podman exec "$NAME" awk '$1 == "search" || $1 == "domain" { for (i = 2; i <= NF; i++) print $i }' /etc/resolv.conf | sort -u; }
