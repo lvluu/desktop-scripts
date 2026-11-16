@@ -47,7 +47,9 @@ A rootful podman container (`vpn-box/Containerfile`) runs `vpnagentd` (Cisco doc
 containers since 5.1.10) on a bridge `VPN_BOX_SUBNET` (default `192.168.250.0/29`; host `.1`, box `.2`).
 After connect the host gets `ip route <VPN_BOX_ROUTES> via <box>`, and systemd-resolved sends the VPN's
 search domains plus `VPN_BOX_DOMAINS` to the VPN's DNS servers on the bridge link. The box masquerades
-into `cscotun0`. Stopping the box drops the bridge, and its routes and DNS go with it.
+into `cscotun0`. Stopping the box drops the bridge, and its routes and DNS go with it. Once connected, the box stops itself
+when its tunnel dies (3 missed pings to the VPN DNS, e.g. after sleep), so a later office or other LAN never has `10.x`
+routed into a dead tunnel. A change to `vpn-box/` rebuilds the image on the next connect (the image carries a hash of it).
 
 Two Cisco quirks in a container, handled in `vpn-box/entry.sh`: podman bind-mounts `/etc/hosts` and
 `/etc/resolv.conf`, Cisco's `unlink` of them fails with EBUSY and the connect ends in "The VPN client
@@ -57,7 +59,7 @@ driver encountered an error" (the entrypoint unmounts them); a lockdown profile 
 
 ## Checks
 
-`test/vpn-box.sh`: `vpn-box disconnect` from the tray or app menu asks no 2FA code.
+`test/vpn-box.sh`: `vpn-box disconnect` from the tray or app menu asks no 2FA code; a dead tunnel is reported and stops the box.
 
 ## License
 

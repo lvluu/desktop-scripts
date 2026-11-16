@@ -3,7 +3,7 @@
 # (licensed binaries, never committed).
 FROM docker.io/library/ubuntu:26.04
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      iproute2 iptables nftables kmod libglib2.0-0t64 libxml2-16 ca-certificates procps \
+      iproute2 iptables nftables kmod libglib2.0-0t64 libxml2-16 ca-certificates procps iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 ADD cisco.tgz /
 COPY entry.sh /entry.sh

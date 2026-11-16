@@ -21,4 +21,17 @@ iptables -t mangle -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-m
       done
     done
   done ) &
-exec sleep infinity
+# The box lives only as long as its tunnel. Once up, a dead tunnel (lid closed, wifi roam, office LAN) ends the
+# container: the bridge goes, and the host's 10/8 + 172.16/12 routes and VPN DNS go with it (left behind they send
+# the office network's own DNS and hosts into a dead tunnel).
+watch_tunnel() {
+  local up=0 fails=0 ns
+  while sleep "${WATCH_EVERY:-10}"; do
+    ip link show cscotun0 >/dev/null 2>&1 || { [ "$up" = 0 ] && continue; echo "vpn-box: cscotun0 gone, stopping"; return; }
+    up=1
+    ns=$(awk '$1 == "nameserver" && $2 !~ /:/ { print $2; exit }' /etc/resolv.conf)
+    if ping -c1 -W3 "$ns" >/dev/null 2>&1; then fails=0; else fails=$((fails + 1)); fi
+    [ "$fails" -lt 3 ] || { echo "vpn-box: VPN DNS $ns did not answer 3 pings, tunnel dead, stopping"; return; }
+  done
+}
+watch_tunnel

@@ -18,3 +18,12 @@ out=$(bash -c 'IP=192.0.2.1; . <(sed -n "/^log()/,/^}/p" "$1"); link() { echo lo
   resolvectl() { :; }; healthy' _ "$(dirname "$0")/../bin/vpn-box" 2>&1) && { echo "FAIL: dead DNS counted healthy"; exit 1; }
 grep -q 'does not answer ping' <<<"$out" || { echo "FAIL: health check did not name the dead DNS: $out"; exit 1; }
 echo "ok: dead tunnel is reported, not connected"
+
+# Regression check: a dead tunnel ends the box (its exit drops the bridge, host routes and VPN DNS), so a closed lid
+# and a later office LAN do not leave 10/8 routed into a dead tunnel.
+entry="$(dirname "$0")/../vpn-box/entry.sh"
+out=$(WATCH_EVERY=0 timeout 5 bash -c '. <(sed -n "/^watch_tunnel()/,/^}/p" "$1"); ip() { :; }; ping() { return 1; }
+  watch_tunnel' _ "$entry") || { echo "FAIL: watch_tunnel did not stop on a dead tunnel"; exit 1; }
+grep -q 'tunnel dead' <<<"$out" || { echo "FAIL: watch_tunnel stopped without saying why: $out"; exit 1; }
+tail -1 "$entry" | grep -qx watch_tunnel || { echo "FAIL: entry.sh no longer ends in watch_tunnel"; exit 1; }
+echo "ok: dead tunnel stops the box"
