@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"bin/vpn-box status; bin/vpn-box health; rtk read ~/.local/state/vpn-box.log --tail-lines 30; rtk ping -c1 -W2 10.54.20.1; sudo -n true && echo SUDO_OK\",\"description\":\"Check vpn-box status,...",
+  "error": "Exit code 1\ndead: routes up but the VPN DNS does not answer; reconnect\n13:44:52 health: routes 4 via 192.168.250.2 on podman1\n13:44:55 health: VPN DNS 10.0.244.250 does not answer ping: tunnel dead, reconnect\n  cisco: \rVPN> \r  >> contacting host (2FA second mgm gateway munich (SSL)) for login information...\n  cisco: \r  >> notice: Contacting 2FA second mgm gateway munich (SSL).\n  cisco: ** unable to get tty! (using stdin), password will echo **\n  cisco: \r  >> notice: Establishing VPN session...\n ...",
+  "timestamp": "2026-11-16T06:44:56.483Z",
+  "retry_count": 1
+}

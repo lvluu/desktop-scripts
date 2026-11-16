@@ -68,7 +68,7 @@ class Tray:
         self.status.set_label("Working…" if busy else up.stdout.strip().capitalize() or "Disconnected")
         for item in (self.connect, self.gateways, self.disconnect):
             item.set_sensitive(not busy)
-        self.disconnect.set_visible(connected)
+        self.disconnect.set_visible(connected or up.stdout.startswith("dead"))
         self.connect.set_label("Reconnect" if connected else "Connect")
         return True
 

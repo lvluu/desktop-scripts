@@ -64,18 +64,22 @@ healthy() {
 # ---- root side ----
 box_vpn() { podman exec "$NAME" "$VPN" "$@"; }
 
+src_hash() { cat "$BIN/../vpn-box/Containerfile" "$BIN/../vpn-box/entry.sh" | sha256sum | cut -c1-12; }
+
 build() {
   local ctx; ctx=$(mktemp -d)
   tar czf "$ctx/cisco.tgz" --exclude=secureclient/temp --exclude=secureclient/dart \
     --exclude=secureclient/CustomerExperienceFeedback -C / "${CISCO#/}" opt/.cisco
   cp "$BIN/../vpn-box/Containerfile" "$BIN/../vpn-box/entry.sh" "$ctx/"
-  podman build -q --network host -t "$NAME" "$ctx" >/dev/null  # a native Cisco session drops bridge traffic
+  podman build -q --network host --label "vpn-box.src=$(src_hash)" -t "$NAME" "$ctx" >/dev/null  # a native Cisco session drops bridge traffic
   rm -rf "$ctx"
   echo "vpn-box: image built"
 }
 
 start() {
-  podman image exists "$NAME" || build
+  # An image from older vpn-box/ files would miss their fixes: rebuild (about a minute; the 2FA code may expire).
+  [ "$(podman image inspect --format '{{index .Labels "vpn-box.src"}}' "$NAME" 2>/dev/null)" = "$(src_hash)" ] || {
+    log "root: image missing or older than vpn-box/, building (reconnect if the 2FA code expires)"; build; }
   podman network exists "$NAME" || podman network create --subnet "$SUBNET" --gateway "$GW" "$NAME" >/dev/null
   podman container exists "$NAME" || podman run -d --rm --name "$NAME" --network "$NAME" --ip "$IP" \
     --privileged --device /dev/net/tun --sysctl net.ipv4.ip_forward=1 "$NAME" >/dev/null

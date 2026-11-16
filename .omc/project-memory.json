@@ -1,0 +1,107 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1794811373634,
+  "projectRoot": "/home/lvluu/dev/desktop-scripts/.claude/worktrees/bitbucket-mgm-network-access-7a14cc",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "bin",
+      "test"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "applications": {
+      "path": "applications",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1794811373628,
+      "keyFiles": [
+        "claude-update.desktop",
+        "tailscale-up.desktop",
+        "vpn-box.desktop",
+        "vpn-up.desktop"
+      ]
+    },
+    "autostart": {
+      "path": "autostart",
+      "purpose": null,
+      "fileCount": 1,
+      "lastAccessed": 1794811373631,
+      "keyFiles": [
+        "vpn-box-tray.desktop"
+      ]
+    },
+    "bin": {
+      "path": "bin",
+      "purpose": "Executable scripts",
+      "fileCount": 10,
+      "lastAccessed": 1794811373632,
+      "keyFiles": [
+        "claude-update",
+        "gui-askpass",
+        "gui-dialog",
+        "gui-run",
+        "gui-sudo"
+      ]
+    },
+    "icons": {
+      "path": "icons",
+      "purpose": null,
+      "fileCount": 6,
+      "lastAccessed": 1794811373632,
+      "keyFiles": [
+        "ds-claude-update.svg",
+        "ds-tailscale.svg",
+        "ds-vpn-box-busy.svg",
+        "ds-vpn-box-off.svg",
+        "ds-vpn-box-on.svg"
+      ]
+    },
+    "test": {
+      "path": "test",
+      "purpose": "Test files",
+      "fileCount": 1,
+      "lastAccessed": 1794811373633,
+      "keyFiles": [
+        "vpn-box.sh"
+      ]
+    },
+    "vpn-box": {
+      "path": "vpn-box",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1794811373633,
+      "keyFiles": [
+        "Containerfile",
+        "entry.sh"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}
